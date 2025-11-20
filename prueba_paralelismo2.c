@@ -161,7 +161,7 @@ int main() {
     int arregloC[tamaño_arregloA + tamaño_arregloB];
     int valor_a_buscar = 49;
     int resultado;
-    crew_merge(arregloA, arregloB, arregloC, tamaño_arregloA, tamaño_arregloB, 3);
+    crew_merge(arregloA, arregloB, arregloC, tamaño_arregloA, tamaño_arregloB, 16);
     printf("El arreglo C es el siguiente: \n");
 
     // Imprimir arregloC en formato [v1, v2, ..., vn]

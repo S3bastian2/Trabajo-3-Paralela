@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
-#define Nprocs 24
+#define Nprocs 13
 #define r 12
 #define s 12
 
@@ -72,10 +72,8 @@ int main(int argc, char **argv) {
 
     N = (argc > 1) ? atoi(argv[1]) : Nprocs;
 
-    // Ensure at least 2 processors so arrays aprime/bprime have positive size
-    if (N < 2) N = 2;
+    if (N < 2) N = 2; // ensure positive sizes for aprime/bprime
 
-    // use integer ceil for chunk sizes to avoid using ceil on integer division
     int chunk_r = (r + N - 1) / N;
     int chunk_s = (s + N - 1) / N;
 
@@ -85,9 +83,7 @@ int main(int argc, char **argv) {
 
     for(int i = 0; i<r+s; i++) c[i] = 0;
 
-    //int a[r] = {2,3,4,6,11,12,13,15,16,20,22,24};
     for(int i = 0; i<r; i++) a[i] = 2*i;
-    //int b[s] = {1,5,7,8,9,10,14,17,18,19,21,23};
     for(int i = 0; i<s; i++) b[i] = 2*i + 1;
 
     omp_set_num_threads(N);
@@ -101,12 +97,10 @@ int main(int argc, char **argv) {
     }
 
     for(int _ = 0; _<N-1;_++) printf("%d, ", aprime[_]);
-
     for(int _ = 0; _<N-1;_++) printf("%d, ", bprime[_]);
-
     printf("\n");
 
-    // Build v from aprime sequentially to avoid race conditions when writing shared array v
+    // sequential build of v to avoid races
     for (int i = 0; i<N-1; i++){
         int j = rigth_insort(bprime, N-1, aprime[i]);
 
@@ -123,10 +117,9 @@ int main(int argc, char **argv) {
         printf("hilo %d crea tripleta v[%d] = {%d,%d,%c}\n", omp_get_thread_num(), i+j, aprime[i], i, 'A'); 
     }
 
-
     printf("\n");
 
-    // Build v from bprime sequentially as well
+    // sequential build of v from bprime
     for (int i = 0; i<N-1; i++){
         int j = rigth_insort(aprime, N-1, bprime[i]);
 
@@ -146,18 +139,17 @@ int main(int argc, char **argv) {
 
     q[0].x = 0;
     q[0].y = 0;
-    
-    // Build q sequentially to avoid races when reading/writing v and q
+
+    // sequential build of q to avoid races and ensure consistent indices
     for (int i = 1; i<N; i++){
-        if (!v[2*i-1].arr_id) {    //solo da true si viene de a
+        if (!v[2*i-1].arr_id) {    // from a
             int j = rigth_insort(b, s, v[2*i -1].elem);
 
             q[i].x = (v[2*i-1].id + 1) * chunk_r -1;
-            q[i].y = j;             //si a'[k] es mayor que todo b, j será automaticamente s.
+            q[i].y = j; 
 
-        } else if(v[2*i -1].arr_id) {
+        } else {
             int j = rigth_insort(a, r, v[2*i -1].elem);
-            
             q[i].x = j;
             q[i].y = (v[2*i-1].id + 1) * chunk_s -1;
         }
@@ -168,7 +160,6 @@ int main(int argc, char **argv) {
     #pragma omp parallel for
     for (int i = 0; i < N; i++) {
         if (i < N-1) {
-
             int vlim = v[2*i+1].elem;
             seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c, c+r+s, vlim);
         } else {
