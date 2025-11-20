@@ -39,7 +39,7 @@ void seq_merge(int *a, int x, int *eofa, int *b, int y, int *eofb, int *c, int *
     b += y;
     c += (x+y);
 
-    while ((a < eofa && *a < vlim) || (b < eofb && *b < vlim)) {
+    while ((a < eofa && *a < vlim) || (b < eofb && *b < vlim) || vlim < 0) {
         if (a == eofa || b == eofb) break;
         
         if (b == eofb || *a < *b){              // si no quedan elementos en b, o si a[i] < b[i]
@@ -85,6 +85,9 @@ int main(int argc, char **argv) {
 
     for(int i = 0; i<r; i++) a[i] = 2*i;
     for(int i = 0; i<s; i++) b[i] = 2*i + 1;
+
+    if(N>r){N = r;}
+    if(N>s){N = s;}
 
     omp_set_num_threads(N);
 
@@ -159,6 +162,7 @@ int main(int argc, char **argv) {
     printf("\n");
     #pragma omp parallel for
     for (int i = 0; i < N; i++) {
+
         if (i < N-1) {
             int vlim = v[2*i+1].elem;
             seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c, c+r+s, vlim);
