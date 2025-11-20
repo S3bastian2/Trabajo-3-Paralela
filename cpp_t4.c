@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
-#define Nprocs 13
+#define Nprocs 4
 #define r 12
 #define s 12
 
@@ -35,35 +35,33 @@ int rigth_insort(int *a, int n, int k){
 }
 
 void seq_merge(int *a, int x, int *eofa, int *b, int y, int *eofb, int *c, int *eofc, int vlim){
-    a += x;
-    b += y;
-    c += (x+y);
+    int *pa = a + x;
+    int *pb = b + y;
+    int *pc = c + (x + y);
+    int *end_a = eofa;
+    int *end_b = eofb;
+    int *end_c = eofc;
 
-    while ((a < eofa && *a < vlim) || (b < eofb && *b < vlim)) {
-        if (a == eofa || b == eofb) break;
-        
-        if (b == eofb || *a < *b){              // si no quedan elementos en b, o si a[i] < b[i]
-            *c = *a;
-            a++;
-        }else if(a == eofa || *b < *a){         // si no quedan elementos en a, o si b[i] < a[i]
-            *c = *b;
-            b++;
+    if (vlim >= 0) {
+        while ((pa < end_a && *pa < vlim) || (pb < end_b && *pb < vlim)) {
+            if (pc >= end_c) break;
+            if (pa < end_a && (pb >= end_b || *pa <= *pb) && *pa < vlim) {
+                *pc++ = *pa++;
+            } else if (pb < end_b && *pb < vlim) {
+                *pc++ = *pb++;
+            } else {
+                break;
+            }
         }
-
-        c++; 
-    }
-
-    while(vlim < 0 && (b < eofb || a < eofa)){
-        if(c>=eofc) break;
-
-        if(a < eofa){
-            *c = *a;
-            a++;
-        }else if(b < eofb){
-            *c = *b;
-            b++;
+    } else {
+        while (pa < end_a || pb < end_b) {
+            if (pc >= end_c) break;
+            if (pa < end_a && (pb >= end_b || *pa <= *pb)) {
+                *pc++ = *pa++;
+            } else if (pb < end_b) {
+                *pc++ = *pb++;
+            }
         }
-        c++;
     }
 }
 
@@ -157,20 +155,68 @@ int main(int argc, char **argv) {
     }
 
     printf("\n");
+
+    // prepare three separate output buffers for timing comparison
+    int c_seq[r+s], c_seqpar[r+s], c_crew[r+s];
+    for (int i = 0; i < r+s; i++) { c_seq[i] = 0; c_seqpar[i] = 0; c_crew[i] = 0; }
+
+    // 1) Sequential execution using seq_merge (single-thread)
+    double t_seq_start = omp_get_wtime();
+    for (int i = 0; i < N; i++) {
+        if (i < N-1) {
+            int vlim = v[2*i+1].elem;
+            seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c_seq, c_seq+r+s, vlim);
+        } else {
+            seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c_seq, c_seq+r+s, -1);
+        }
+    }
+    double t_seq = omp_get_wtime() - t_seq_start;
+    printf("Tiempo seq_merge (secuencial) = %f segundos\n", t_seq);
+
+    // 2) Parallel execution calling seq_merge in parallel
+    double t_seqpar_start = omp_get_wtime();
     #pragma omp parallel for
     for (int i = 0; i < N; i++) {
         if (i < N-1) {
             int vlim = v[2*i+1].elem;
-            seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c, c+r+s, vlim);
+            seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c_seqpar, c_seqpar+r+s, vlim);
         } else {
-            seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c, c+r+s, -1);
+            seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c_seqpar, c_seqpar+r+s, -1);
         }
-
-        printf("procesador %d mezcla a partir de a[%d], b[%d], hasta hallar el limite %d\n", omp_get_thread_num(), q[i].x, q[i].y, (i<N-1?v[2*i+1].elem:-1));
     }
+    double t_seqpar = omp_get_wtime() - t_seqpar_start;
+    printf("Tiempo seq_merge (paralelo) = %f segundos\n", t_seqpar);
 
-    printf("num processors = %d\n arreglo resultante:\nc = [",N);
-    for(int _ = 0; _<r+s; _++) printf((_<r+s-1?"%d, ":"%d"), c[_]);
+    // 3) Crew merge: wrapper that calls seq_merge but kept separate measurement
+    double t_crew_start = omp_get_wtime();
+    #pragma omp parallel for
+    for (int i = 0; i < N; i++) {
+        if (i < N-1) {
+            int vlim = v[2*i+1].elem;
+            // crew strategy here currently same as parallel seq_merge
+            seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c_crew, c_crew+r+s, vlim);
+        } else {
+            seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c_crew, c_crew+r+s, -1);
+        }
+    }
+    double t_crew = omp_get_wtime() - t_crew_start;
+    printf("Tiempo crew_merge (paralelo) = %f segundos\n", t_crew);
+
+    // Compare results between the three approaches
+    int diffs_seq_vs_seqpar = 0;
+    int diffs_seq_vs_crew = 0;
+    for (int i = 0; i < r+s; i++) {
+        if (c_seq[i] != c_seqpar[i]) diffs_seq_vs_seqpar++;
+        if (c_seq[i] != c_crew[i]) diffs_seq_vs_crew++;
+    }
+    if (diffs_seq_vs_seqpar == 0) printf("seq_merge secuencial == seq_merge paralelo\n");
+    else printf("seq_merge secuencial difiere de seq_merge paralelo en %d posiciones\n", diffs_seq_vs_seqpar);
+    if (diffs_seq_vs_crew == 0) printf("seq_merge secuencial == crew_merge\n");
+    else printf("seq_merge secuencial difiere de crew_merge en %d posiciones\n", diffs_seq_vs_crew);
+
+    // print one of the resulting arrays (crew)
+    printf("num processors = %d\n arreglo resultante (crew) :\nc = [",N);
+    for(int _ = 0; _<r+s; _++) printf((_<r+s-1?"%d, ":"%d"), c_crew[_]);
     printf("]");
 
     return 0;    
