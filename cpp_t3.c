@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
-#define Nprocs 24
+#define Nprocs 16
 #define r 12
 #define s 12
 
@@ -39,7 +39,7 @@ void seq_merge(int *a, int x, int *eofa, int *b, int y, int *eofb, int *c, int *
     b += y;
     c += (x+y);
 
-    while ((a < eofa && *a < vlim) || (b < eofb && *b < vlim)) {
+    while ((a < eofa && *a < vlim) || (b < eofb && *b < vlim) || vlim < 0) {
         if (a == eofa || b == eofb) break;
         
         if (b == eofb || *a < *b){              // si no quedan elementos en b, o si a[i] < b[i]
@@ -72,12 +72,6 @@ int main(int argc, char **argv) {
 
     N = (argc > 1) ? atoi(argv[1]) : Nprocs;
 
-    // Ensure at least 2 processors so arrays aprime/bprime have positive size
-    if (N < 2) N = 2;
-
-    // use integer ceil for chunk sizes to avoid using ceil on integer division
-    int chunk_r = (r + N - 1) / N;
-    int chunk_s = (s + N - 1) / N;
 
     int a[r], b[s], aprime[N-1], bprime[N-1], c[r+s];
     triplet v[2*N - 2];
@@ -90,13 +84,14 @@ int main(int argc, char **argv) {
     //int b[s] = {1,5,7,8,9,10,14,17,18,19,21,23};
     for(int i = 0; i<s; i++) b[i] = 2*i + 1;
 
+    
     omp_set_num_threads(N);
 
     #pragma omp parallel for
     for (int i = 0; i<N-1; i++) {
-        int aidx = (i+1) * chunk_r, bidx = (i+1) * chunk_s;
-        aprime[i] = a[(aidx >= r? r-1 : aidx-1)];
-        bprime[i] = b[(bidx >= s? s-1 : bidx-1)];
+        int aidx = (i+1) * ((int)(r/N)+1), bidx = (i+1) * ((int)(s/N)+1);
+        aprime[i] = a[(aidx >= r? r : aidx)-1];
+        bprime[i] = b[(bidx >= s? s : bidx)-1];
         printf("hilo %d selecciona pivotes a'[%d] = %d, b'[%d] = %d\n", omp_get_thread_num(), i, aprime[i], i, bprime[i]);
     }
 
@@ -106,9 +101,11 @@ int main(int argc, char **argv) {
 
     printf("\n");
 
-    // Build v from aprime sequentially to avoid race conditions when writing shared array v
+    #pragma omp parallel for
     for (int i = 0; i<N-1; i++){
+        //int t_id = omp_get_thread_num();
         int j = rigth_insort(bprime, N-1, aprime[i]);
+
 
         if(j == N-1){
             v[i+N-1].elem = aprime[i];
@@ -126,8 +123,10 @@ int main(int argc, char **argv) {
 
     printf("\n");
 
-    // Build v from bprime sequentially as well
+    #pragma omp parallel for
     for (int i = 0; i<N-1; i++){
+        //int t_id = omp_get_thread_num();
+
         int j = rigth_insort(aprime, N-1, bprime[i]);
 
         if(j == N-1){
@@ -147,19 +146,19 @@ int main(int argc, char **argv) {
     q[0].x = 0;
     q[0].y = 0;
     
-    // Build q sequentially to avoid races when reading/writing v and q
+    #pragma omp parallel for
     for (int i = 1; i<N; i++){
         if (!v[2*i-1].arr_id) {    //solo da true si viene de a
             int j = rigth_insort(b, s, v[2*i -1].elem);
 
-            q[i].x = (v[2*i-1].id + 1) * chunk_r -1;
+            q[i].x = (v[2*i-1].id + 1) * (int)(r/N);
             q[i].y = j;             //si a'[k] es mayor que todo b, j será automaticamente s.
 
         } else if(v[2*i -1].arr_id) {
             int j = rigth_insort(a, r, v[2*i -1].elem);
             
             q[i].x = j;
-            q[i].y = (v[2*i-1].id + 1) * chunk_s -1;
+            q[i].y = (v[2*i-1].id + 1) * (int)(s/N);
         }
         printf("Procesador %d crea dupla Q[%d] = (%d,%d)\n", omp_get_thread_num(), i, q[i].x+1, q[i].y+1);
     }
@@ -168,7 +167,6 @@ int main(int argc, char **argv) {
     #pragma omp parallel for
     for (int i = 0; i < N; i++) {
         if (i < N-1) {
-
             int vlim = v[2*i+1].elem;
             seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c, c+r+s, vlim);
         } else {

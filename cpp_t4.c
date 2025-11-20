@@ -81,6 +81,8 @@ int main(int argc, char **argv) {
 
     for(int i = 0; i<r+s; i++) c[i] = 0;
 
+    //int a[r] = {2, 3, 4, 6, 11, 12, 13, 15, 16, 20, 22, 24};
+    //int b[s] = {1, 5, 7, 8, 9, 10, 14, 17, 18, 19, 21, 23};
     for(int i = 0; i<r; i++) a[i] = 2*i;
     for(int i = 0; i<s; i++) b[i] = 2*i + 1;
 
@@ -196,10 +198,14 @@ int main(int argc, char **argv) {
     #pragma omp parallel for
     for (int i = 0; i < N; i++) {
         if (i < N-1) {
+            if (q[i].x >= r) q[i].x = r-1;
+            if (q[i].y >= s) q[i].y = s-1;
             int vlim = v[2*i+1].elem;
             // crew strategy here currently same as parallel seq_merge
             seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c_crew, c_crew+r+s, vlim);
         } else {
+            if (q[i].x >= r) q[i].x = r-1;
+            if (q[i].y >= s) q[i].y = s-1;
             seq_merge(a, q[i].x, a+r, b, q[i].y, b+s, c_crew, c_crew+r+s, -1);
         }
     }
